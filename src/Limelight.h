@@ -483,6 +483,14 @@ typedef void(*ConnListenerSetAdaptiveTriggers)(uint16_t controllerNumber, uint8_
 // This callback is invoked to set a controller's RGB LED (if present).
 typedef void(*ConnListenerSetControllerLED)(uint16_t controllerNumber, uint8_t r, uint8_t g, uint8_t b);
 
+// RD extension: the host sent a new cursor image. bgra is width*height*4 bytes of
+// straight-alpha BGRA. Clients cache shapes by id. Called on the control receive thread.
+typedef void(*ConnListenerRdSetCursorShape)(uint32_t id, uint16_t width, uint16_t height, uint16_t hotX, uint16_t hotY, const uint8_t* bgra);
+
+// RD extension: the host cursor shape id or visibility changed. When visible is false,
+// an app hid the cursor (often a game capturing the mouse). Called on the control receive thread.
+typedef void(*ConnListenerRdSetCursorState)(uint32_t id, bool visible);
+
 typedef struct _CONNECTION_LISTENER_CALLBACKS {
     ConnListenerStageStarting stageStarting;
     ConnListenerStageComplete stageComplete;
@@ -497,6 +505,8 @@ typedef struct _CONNECTION_LISTENER_CALLBACKS {
     ConnListenerSetMotionEventState setMotionEventState;
     ConnListenerSetControllerLED setControllerLED;
     ConnListenerSetAdaptiveTriggers setAdaptiveTriggers;
+    ConnListenerRdSetCursorShape rdSetCursorShape;
+    ConnListenerRdSetCursorState rdSetCursorState;
 } CONNECTION_LISTENER_CALLBACKS, *PCONNECTION_LISTENER_CALLBACKS;
 
 // Use this function to zero the connection callbacks when allocated on the stack or heap
@@ -1011,7 +1021,22 @@ void LiRequestIdrFrame(void);
 // This function returns any extended feature flags supported by the host.
 #define LI_FF_PEN_TOUCH_EVENTS        0x01 // LiSendTouchEvent()/LiSendPenEvent() supported
 #define LI_FF_CONTROLLER_TOUCH_EVENTS 0x02 // LiSendControllerTouchEvent() supported
+#define LI_FF_RD_LOCAL_CURSOR         0x40000000 // RD host: cursor shape messages + client battery
 uint32_t LiGetHostFeatureFlags(void);
+
+// RD extension: call before LiStartConnection(). When true and the host supports it,
+// the host stops drawing the cursor into the video and sends cursor shapes instead.
+void LiRdSetLocalCursorRequested(bool requested);
+
+// RD extension: true when the current session negotiated client-drawn cursor.
+bool LiRdIsLocalCursorActive(void);
+
+// RD extension: report client battery to the host (shown in the host tray).
+// percent: 0-100, or 255 if unknown. flags: RD_BATT_*. minutesLeft: 0xFFFF if unknown.
+#define RD_BATT_DISCHARGING 0x01
+#define RD_BATT_CHARGING    0x02
+#define RD_BATT_NO_BATTERY  0x04
+int LiRdSendBatteryStatus(uint8_t percent, uint8_t flags, uint16_t minutesLeft, const char* deviceName);
 
 #ifdef __cplusplus
 }

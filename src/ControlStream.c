@@ -1292,8 +1292,29 @@ static void controlReceiveThreadFunc(void* context) {
                 hdrEnabled = (enableByte != 0);
             }
 
+            // RD: cursor messages are handled inline (the client posts them to its UI thread).
+            if (ctlHdr->type == RD_MSG_CURSOR_SHAPE || ctlHdr->type == RD_MSG_CURSOR_STATE) {
+                BYTE_BUFFER bb;
+                uint32_t id = 0;
+
+                BbInitializeWrappedBuffer(&bb, (char*)ctlHdr, sizeof(*ctlHdr), packetLength - sizeof(*ctlHdr), BYTE_ORDER_LITTLE);
+                if (ctlHdr->type == RD_MSG_CURSOR_SHAPE) {
+                    uint16_t w = 0, h = 0, hx = 0, hy = 0;
+                    if (BbGet32(&bb, &id) && BbGet16(&bb, &w) && BbGet16(&bb, &h) && BbGet16(&bb, &hx) && BbGet16(&bb, &hy) &&
+                            w > 0 && h > 0 && w <= 256 && h <= 256 && hx < w && hy < h &&
+                            bb.length - bb.position >= (unsigned int)w * h * 4) {
+                        ListenerCallbacks.rdSetCursorShape(id, w, h, hx, hy, (const uint8_t*)&bb.buffer[bb.position]);
+                    }
+                }
+                else {
+                    uint8_t visible = 0;
+                    if (BbGet32(&bb, &id) && BbGet8(&bb, &visible)) {
+                        ListenerCallbacks.rdSetCursorState(id, visible != 0);
+                    }
+                }
+            }
             // Process client callbacks in a separate thread
-            if (needsAsyncCallback(ctlHdr->type)) {
+            else if (needsAsyncCallback(ctlHdr->type)) {
                 queueAsyncCallback(ctlHdr, packetLength);
             }
             else if (ctlHdr->type == packetTypes[IDX_TERMINATION]) {
@@ -1687,6 +1708,43 @@ int stopControlStream(void) {
     }
 
     return 0;
+}
+
+static bool rdLocalCursorRequested;
+
+void LiRdSetLocalCursorRequested(bool requested) {
+    rdLocalCursorRequested = requested;
+}
+
+bool rdIsLocalCursorNegotiated(void) {
+    return rdLocalCursorRequested && IS_SUNSHINE() && (SunshineFeatureFlags & LI_FF_RD_LOCAL_CURSOR);
+}
+
+bool LiRdIsLocalCursorActive(void) {
+    return rdIsLocalCursorNegotiated();
+}
+
+int LiRdSendBatteryStatus(uint8_t percent, uint8_t flags, uint16_t minutesLeft, const char* deviceName) {
+    uint8_t payload[4 + 64];
+    size_t nameLen = deviceName ? strlen(deviceName) : 0;
+
+    if (!IS_SUNSHINE() || !(SunshineFeatureFlags & LI_FF_RD_LOCAL_CURSOR) || AppVersionQuad[0] < 5 || peer == NULL || stopping) {
+        return -1;
+    }
+
+    if (nameLen > 64) {
+        nameLen = 64;
+    }
+    payload[0] = percent;
+    payload[1] = flags;
+    payload[2] = (uint8_t)(minutesLeft & 0xFF);
+    payload[3] = (uint8_t)(minutesLeft >> 8);
+    if (nameLen) {
+        memcpy(&payload[4], deviceName, nameLen);
+    }
+
+    return sendMessageAndForget(RD_MSG_CLIENT_BATTERY, (unsigned int)(4 + nameLen), payload,
+                                CTRL_CHANNEL_GENERIC, ENET_PACKET_FLAG_RELIABLE, false) ? 0 : -1;
 }
 
 // Called by the input stream to send a packet for Gen 5+ servers

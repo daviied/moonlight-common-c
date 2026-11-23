@@ -86,7 +86,12 @@ extern uint32_t EncryptionFeaturesEnabled;
 
 // Client feature flags for x-ml-general.featureFlags SDP attribute
 #define ML_FF_FEC_STATUS 0x01 // Client sends SS_FRAME_FEC_STATUS for frame losses
-#define ML_FF_SESSION_ID_V1 0x02 // Client supports X-SS-Ping-Payload and X-SS-Connect-Data
+#define ML_FF_SESSION_ID_V1 0x02
+// RD extension
+#define RD_MSG_CURSOR_SHAPE   0x55F0
+#define RD_MSG_CURSOR_STATE   0x55F1
+#define RD_MSG_CLIENT_BATTERY 0x55F2
+bool rdIsLocalCursorNegotiated(void); // Client supports X-SS-Ping-Payload and X-SS-Connect-Data
 
 #define UDP_RECV_POLL_TIMEOUT_MS 100
 
